@@ -1403,7 +1403,7 @@ cglobal vp9_ipred_vr_16x16_16, 4, 4, 6, dst, stride, l, a
 
     pslldq                  m0, m1, 8                  ; ....MNORSTUVWXYZ
     vperm2i128              m5, m3, m0, q0003          ; STUVWXYZ#ABCDEFG
-    
+
     ;vpshuflw                m0, m1, q3120
     ;vpshufhw                m0, m1, q3120
 
@@ -1845,7 +1845,7 @@ cglobal vp9_ipred_vr_16x16_16, 4, 4, 8, dst, stride, l, a
     pslldq                  m4, m5,  2              ; .lmnopqr
     pslldq                  m7, m5,  4              ; ..lmnopq
     LOWPASS                  5,  4,  7              ; .LMNOPQR
-    psrld                   m4, m1, 16              ; 
+    psrld                   m4, m1, 16              ;
     psrld                   m7, m5, 16              ;
     pand                    m1, [pd_65535]
     pand                    m5, [pd_65535]
