@@ -1,4 +1,4 @@
-;******************************************************************************
+ ;******************************************************************************
 ;* VP9 Intra prediction SIMD optimizations
 ;*
 ;* Copyright (c) 2015 Ronald S. Bultje <rsbultje gmail com>
@@ -32,6 +32,7 @@ pd_8: times 8 dd 8
 pb_2to15_14_15: db 2,3,4,5,6,7,8,9,10,11,12,13,14,15,14,15
 pb_4_5_8to13_8x0: db 4,5,8,9,10,11,12,13,0,0,0,0,0,0,0,0
 pb_0to7_67x4: db 0,1,2,3,4,5,6,7,6,7,6,7,6,7,6,7
+pb_even0to6_odd1to7: db 0,2,4,6,1,3,5,7
 
 cextern pw_1
 cextern pw_1023
@@ -1222,7 +1223,6 @@ cglobal vp9_ipred_dr_16x16_16, 4, 5, 6, dst, stride, l, a
     mova     [dst3q+strideq*4], m5                     ; 7
     RET
 
-; our code 1
 cglobal vp9_ipred_vl_16x16_16, 4, 5, 7, dst, stride, l, a
     movifnidn               aq, amp
     mova                    m0, [aq]                   ; abcdefghijklmnop
@@ -1232,57 +1232,115 @@ cglobal vp9_ipred_vl_16x16_16, 4, 5, 7, dst, stride, l, a
     vperm2i128              m4, m3, m1, q0201          ; jklmnopppppppppp
     vpalignr                m5, m2, m0, 4              ; cdefghijklmnoppp
     vperm2i128              m6, m5, m1, q0201          ; klmnoppppppppppp
-    LOWPASS                 5, 3, 0                    ; BCDEFGHIJKLMNOPP
-    LOWPASS                 6, 4, 2                    ; JKLMNOPPPPPPPPPP
+    LOWPASS                  5,  3,  0                 ; BCDEFGHIJKLMNOPP
+    LOWPASS                  6,  4,  2                 ; JKLMNOPPPPPPPPPP
     pavgw                   m3, m0                     ; abcdefghijklmnop
     pavgw                   m4, m2                     ; ijklmnoppppppppp
+    DEFINE_ARGS dst, stride, stride3, stride5, dst4
+    lea                  dst4q, [dstq+strideq*4]
+    lea               stride3q, [strideq*3]
+    lea               stride5q, [stride3q+strideq*2]
+
+    mova      [dstq+strideq*0], m3                     ; 0  abcdefghijklmnop
+    mova      [dstq+strideq*1], m5                     ; 1  BCDEFGHIJKLMNOPP
+    vpalignr                m0, m4, m3, 2
+    vpalignr                m1, m6, m5, 2
+    mova     [dstq+strideq*2 ], m0                     ; 2  bcdefghijklmnopp
+    mova     [dstq+stride3q*1], m1                     ; 3  CDEFGHIJKLMNOPPP
+    vpalignr                m0, m4, m3, 4
+    vpalignr                m1, m6, m5, 4
+    mova     [dst4q+strideq*0], m0                     ; 4  cdefghijklmnoppp
+    mova     [dstq+stride5q*1], m1                     ; 5  DEFGHIJKLMNOPPPP
+    vpalignr                m0, m4, m3, 6
+    vpalignr                m1, m6, m5, 6
+    mova    [ dstq+stride3q*2], m0                     ; 6  defghijklmnopppp
+    mova    [dst4q+stride3q*1], m1                     ; 7  EFGHIJKLMNOPPPPP
+    vpalignr                m0, m4, m3, 8
+    vpalignr                m1, m6, m5, 8
+    mova    [  dstq+strideq*8], m0                     ; 8  efghijklmnoppppp
+    mova    [dst4q+stride5q*1], m1                     ; 9  FGHIJKLMNOPPPPPP
+    vpalignr                m0, m4, m3, 10
+    mova     [dstq+stride5q*2], m0                     ; 10 fghijklmnopppppp
+    vpalignr                m0, m4, m3, 12
+    mova     [dst4q+strideq*8], m0                     ; 12 ghijklmnoppppppp
+    vpalignr                m0, m4, m3, 14
+    mova    [dst4q+stride5q*2], m0                     ; 14 hijklmnopppppppp
+    sub                  dst4q, strideq
+    vpalignr                m1, m6, m5, 10
+    mova     [dst4q+strideq*8], m1                     ; 11 GHIJKLMNOPPPPPPP
+    vpalignr                m1, m6, m5, 12
+    mova    [dst4q+stride5q*2], m1                     ; 13 HIJKLMNOPPPPPPPP
+    vpalignr                m1, m6, m5, 14
+    mova    [dst4q+stride3q*4], m1                     ; 15 IJKLMNOPPPPPPPPP
+    RET
+
+cglobal vp9_ipred_vr_16x16_16, 4, 4, 6, dst, stride, l, a
+    movu                    m0, [aq-2]                 ; *abcdefghijklmno
+    movu                    m1, [lq-2]                 ; *klmnopqrstuvwxy
+    mova                    m2, [lq]                   ; klmnopqrstuvwxyz
+    vperm2i128              m3, m0, m2, q0003          ; stuvwxyz*abcdefg
+    vpalignr                m4, m3, m2, 2              ; lmnopqrstuvwxyz*
+    LOWPASS                 4, 2, 1                    ; KLMNOPQRSTUVWXYZ
+
+    mova                    m1, [aq]                   ; abcdefghijklmnop
+    mova                    m2, [aq]                   ; abcdefghijklmnop
+    vpalignr                m5, m0, m3, 14             ; z*abcdefghijklmn
+    LOWPASS                 1, 0, 5                    ; #ABCDEFGHIJKLMNO
+    pavgw                   m2, m0                     ; *abcdefghijklmno
+    vpshuflw                m5, m4, q3120              ; KMLNOPQRSUTVWXYZ
+    vpshufhw                m0, m5, q3120              ; KMLNOQPRSUTVWYXZ
+    vpmovsxbd               m3, [pb_even0to6_odd1to7]
+    vpermd                  m5, m3, m0                 ; KMOQSUWYLNPRTVXZ
+    vperm2i128              m3, m2, m5, q0003          ; LNPRTVXZ*abcdefg
+    vperm2i128              m4, m1, m5, q0002          ; KMOQSUWY#ABCDEFG
+
 
     DEFINE_ARGS dst, stride, stride3, stride5, dst4
     lea                  dst4q, [dstq+strideq*4]
     lea               stride3q, [strideq*3]
     lea               stride5q, [stride3q+strideq*2]
 
-    mova      [dstq+strideq*0], m3                     ;0 abcdefghijklmnop
-    mova      [dstq+strideq*1], m5                     ;1 BCDEFGHIJKLMNOPP
-    vpalignr                m0, m4, m3, 2
-    vpalignr                m1, m6, m5, 2
-    mova      [dstq+strideq*2], m0                     ;2 bcdefghijklmnopp
-    mova     [dstq+stride3q*1], m1                     ;3 CDEFGHIJKLMNOPPP
-    vpalignr                m0, m4, m3, 4
-    vpalignr                m1, m6, m5, 4
-    mova     [dst4q+strideq*0], m0                     ;4 cdefghijklmnoppp
-    mova     [dstq+stride5q*1], m1                     ;5 DEFGHIJKLMNOPPPP
-    vpalignr                m0, m4, m3, 6
-    vpalignr                m1, m6, m5, 6
-    mova     [dstq+stride3q*2], m0                     ;6 defghijklmnopppp
-    mova    [dst4q+stride3q*1], m1                     ;7 EFGHIJKLMNOPPPPP
-    vpalignr                m0, m4, m3, 8
-    vpalignr                m1, m6, m5, 8
-    mova      [dstq+strideq*8], m0                     ;8 efghijklmnoppppp
-    mova    [dst4q+stride5q*1], m1                     ;9 FGHIJKLMNOPPPPPP
-    vpalignr                m0, m4, m3, 10
-    mova     [dstq+stride5q*2], m0                     ;10 fghijklmnopppppp
-    vpalignr                m0, m4, m3, 12
-    mova     [dst4q+strideq*8], m0                     ;12 ghijklmnoppppppp
-    vpalignr                m0, m4, m3, 14
-    mova    [dst4q+stride5q*2], m0                     ;14 hijklmnopppppppp
+
+    vpalignr                m0, m2, m3, 2
+    mova    [dst4q+stride5q*2], m0                     ;14 NPRTVXZ*abcdefgh
+    vpalignr                m0, m2, m3, 4
+    mova     [dstq+stride3q*4], m0                     ;12 PRTVXZ*abcdefghi
+    vpalignr                m0, m2, m3, 6
+    mova     [dstq+stride5q*2], m0                     ;10 RTVXZ*abcdefghij
+    vpalignr                m5, m1, m4, 8
+    vpalignr                m0, m2, m3, 8
+    mova    [dst4q+stride5q*1], m5                     ;9  SUWY#ABCDEFGHIJK
+    mova      [dstq+strideq*8], m0                     ;8  TVXZ*abcdefghijk
+    vpalignr                m5, m1, m4, 10
+    vpalignr                m0, m2, m3, 10
+    mova    [dst4q+stride3q*1], m5                     ;7  UWY#ABCDEFGHIJKL
+    mova     [dstq+stride3q*2], m0                     ;6  VXZ*abcdefghijkl
+    vpalignr                m5, m1, m4, 12
+    vpalignr                m0, m2, m3, 12
+    mova     [dstq+stride5q*1], m5                     ;5  WY#ABCDEFGHIJKLM
+    mova     [dst4q+strideq*0], m0                     ;4  XZ*abcdefghijklm
+    vpalignr                m5, m1, m4, 14
+    vpalignr                m0, m2, m3, 14
+    mova     [dstq+stride3q*1], m5                     ;3  Y#ABCDEFGHIJKLMN
+    mova      [dstq+strideq*2], m0                     ;2  Z*abcdefghijklmn
+    mova      [dstq+strideq*1], m1                     ;1  #ABCDEFGHIJKLMNO
+    mova      [dstq+strideq*0], m2                     ;0  *abcdefghijklmno
     sub dst4q, strideq
-    vpalignr                m1, m6, m5, 10
-    mova     [dst4q+strideq*8], m1                     ;11 GHIJKLMNOPPPPPPP
-    vpalignr                m1, m6, m5, 12
-    mova    [dst4q+stride5q*2], m1                     ;13 HIJKLMNOPPPPPPPP
-    vpalignr                m1, m6, m5, 14
-    mova    [dst4q+stride3q*4], m1                     ;15 IJKLMNOPPPPPPPPP
+    vpalignr                m5, m1, m4, 2
+    mova    [dst4q+stride3q*4], m5                     ;15 MOQSUWY#ABCDEFGH
+    vpalignr                m5, m1, m4, 4
+    mova    [dst4q+stride5q*2], m5                     ;13 OQSUWY#ABCDEFGHI
+    vpalignr                m5, m1, m4, 6
+    mova     [dst4q+strideq*8], m5                     ;11 QSUWY#ABCDEFGHIJ
     RET
 
-; our code 3
 cglobal vp9_ipred_hu_16x16_16, 3, 5, 7, dst, stride, l, a
     mova                    m0, [lq]                   ; abcdefghijklmnop
-    vpbroadcastw            xm1, [lq+30]               ; pppppppp
+    vpbroadcastw           xm1, [lq+30]                ; pppppppp
     vperm2i128              m2, m0, m1, q0201          ; ijklmnoppppppppp
     vpalignr                m3, m2, m0, 2              ; bcdefghijklmnopp
     vpalignr                m4, m2, m0, 4              ; cdefghijklmnoppp
-    LOWPASS                 4, 3, 0                    ; BCDEFGHIJKLMNOPp
+    LOWPASS                  4,  3,  0                 ; BCDEFGHIJKLMNOPp
     pavgw                   m3, m0                     ; abcdefghijklmnop
     vperm2i128              m2, m1, m1, q0200          ; pppppppppppppppp
     vpunpcklwd              m0, m3, m4                 ; aBbCcDdEiJjKkLlM
@@ -1291,162 +1349,125 @@ cglobal vp9_ipred_hu_16x16_16, 3, 5, 7, dst, stride, l, a
     vperm2i128              m4, m1, m0, q0300          ; eFfGgHhIiJjKkLlM
     vperm2i128              m0, m4, m1, q0301          ; iJjKkLlMmNnOoPpp
     vperm2i128              m1, m2, m0, q0003          ; mNnOoPpppppppppp
-
     DEFINE_ARGS dst, stride, stride3, stride5, dst4
     lea                  dst4q, [dstq+strideq*4]
     lea               stride3q, [strideq*3]
     lea               stride5q, [stride3q+strideq*2]
 
-    mova      [dstq+strideq*0], m3                     ; 0 aBbCcDdEeFfGgHhI
-    mova     [dst4q+strideq*0], m4                     ; 4 eFfGgHhIiJjKkLlM
-    mova      [dstq+strideq*8], m0                     ; 8 iJjKkLlMmNnOoPpp
+    mova      [dstq+strideq*0], m3                     ; 0  aBbCcDdEeFfGgHhI
+    mova     [dst4q+strideq*0], m4                     ; 4  eFfGgHhIiJjKkLlM
+    mova      [dstq+strideq*8], m0                     ; 8  iJjKkLlMmNnOoPpp
     mova     [dst4q+strideq*8], m1                     ; 12 mNnOoPpppppppppp
     vpalignr                m5, m4, m3, 4
     vpalignr                m6, m0, m4, 4
-    mova      [dstq+strideq*1], m5                     ; 1 bCcDdEeFfGgHhIiJ
-    mova     [dstq+stride5q*1], m6                     ; 5 fGgHhIiJjKkLlMmN
+    mova      [dstq+strideq*1], m5                     ; 1  bCcDdEeFfGgHhIiJ
+    mova     [dstq+stride5q*1], m6                     ; 5  fGgHhIiJjKkLlMmN
     vpalignr                m5, m1, m0, 4
-    mova    [dst4q+stride5q*1], m5                     ; 9 jKkLlMmNnOoPpppp
+    mova    [dst4q+stride5q*1], m5                     ; 9  jKkLlMmNnOoPpppp
     vpalignr                m5, m4, m3, 8
     vpalignr                m6, m0, m4, 8
-    mova      [dstq+strideq*2], m5                     ; 2 cDdEeFfGgHhIiJjK
-    mova     [dstq+stride3q*2], m6                     ; 6 gHhIiJjKkLlMmNnO
+    mova      [dstq+strideq*2], m5                     ; 2  cDdEeFfGgHhIiJjK
+    mova     [dstq+stride3q*2], m6                     ; 6  gHhIiJjKkLlMmNnO
     vpalignr                m5, m1, m0, 8
     vpalignr                m6, m2, m1, 8
     mova     [dstq+stride5q*2], m5                     ; 10 kLlMmNnOoPpppppp
     mova    [dst4q+stride5q*2], m6                     ; 14 oPpppppppppppppp
     vpalignr                m5, m4, m3, 12
     vpalignr                m6, m0, m4, 12
-    mova     [dstq+stride3q*1], m5                     ; 3 dEeFfGgHhIiJjKkL
-    mova    [dst4q+stride3q*1], m6                     ; 7 hIiJjKkLlMmNnOoP
+    mova     [dstq+stride3q*1], m5                     ; 3  dEeFfGgHhIiJjKkL
+    mova    [dst4q+stride3q*1], m6                     ; 7  hIiJjKkLlMmNnOoP
     vpalignr                m5, m1, m0, 12
-    sub dst4q, strideq
+    sub                  dst4q, strideq
     mova     [dst4q+strideq*8], m5                     ; 11 lMmNnOoPpppppppp
     mova    [dst4q+stride3q*4], m2                     ; 15 oPpppppppppppppp
     vpalignr                m6, m2, m1, 4
     mova    [dst4q+stride5q*2], m6                     ; 13 nOoPpppppppppppp
     RET
 
-
-; our code 4
 cglobal vp9_ipred_hd_16x16_16, 4, 5, 7, dst, stride, l, a
     movu                    m0, [aq-2]                 ; *abcdefghijklmno
     mova                    m1, [lq]                   ; klmnopqrstuvwxyz
     vperm2i128              m2, m1, m0, q0201          ; stuvwxyz*abcdefg
     vpalignr                m3, m2, m1, 2              ; lmnopqrstuvwxyz*
     vpalignr                m4, m2, m1, 4              ; mnopqrstuvwxyz*a
-    LOWPASS                 4, 3, 1                    ; LMNOPQRSTUVWXYZ#
+    LOWPASS                  4,  3,  1                 ; LMNOPQRSTUVWXYZ#
     pavgw                   m3, m1                     ; klmnopqrstuvwxyz
     mova                    m1, [aq]                   ; abcdefghijklmnop
     movu                    m2, [aq+2]                 ; bcdefghijklmnop.
-    LOWPASS                 2, 1, 0                    ; ABCDEFGHIJKLMNO.
+    LOWPASS                  2,  1,  0                 ; ABCDEFGHIJKLMNO.
     vpunpcklwd              m0, m3, m4                 ; kLlMmNnOsTtUuVvW
     vpunpckhwd              m1, m3, m4                 ; oPpQqRrSwXxYyZz#
     vperm2i128              m3, m1, m0, q0002          ; kLlMmNnOoPpQqRrS
     vperm2i128              m4, m0, m1, q0301          ; sTtUuVvWwXxYyZz#
     vperm2i128              m0, m4, m2, q0201          ; wXxYyZz#ABCDEFGH
     vperm2i128              m1, m3, m4, q0201          ; oPpQqRrSsTtUuVvW
-
     DEFINE_ARGS dst, stride, stride3, stride5, dst5
-    lea stride3q, [strideq*3]
-    lea stride5q, [stride3q+strideq*2]
-    lea dst5q, [dstq+stride5q]
+    lea               stride3q, [strideq*3]
+    lea               stride5q, [stride3q+strideq*2]
+    lea                  dst5q, [dstq+stride5q]
 
     mova    [dst5q+stride5q*2], m3                     ; 15 kLlMmNnOoPpQqRrS
     mova    [dst5q+stride3q*2], m1                     ; 11 oPpQqRrSsTtUuVvW
-    mova     [dst5q+strideq*2], m4                     ; 7 sTtUuVvWwXxYyZz#
-    mova     [dstq+stride3q*1], m0                     ; 3 wXxYyZz#ABCDEFGH
+    mova     [dst5q+strideq*2], m4                     ; 7  sTtUuVvWwXxYyZz#
+    mova     [dstq+stride3q*1], m0                     ; 3  wXxYyZz#ABCDEFGH
     vpalignr                m5, m4, m1, 4
     mova     [dstq+stride5q*2], m5                     ; 10 pQqRrSsTtUuVvWwX
     vpalignr                m5, m0, m4, 4
     vpalignr                m6, m2, m0, 4
-    mova     [dstq+stride3q*2], m5                     ; 6 tUuVvWwXxYyZz#AB
-    mova      [dstq+strideq*2], m6                     ; 2 xYyZz#ABCDEFGHIJ
+    mova     [dstq+stride3q*2], m5                     ; 6  tUuVvWwXxYyZz#AB
+    mova      [dstq+strideq*2], m6                     ; 2  xYyZz#ABCDEFGHIJ
     vpalignr                m5, m4, m1, 8
-    mova     [dst5q+strideq*4], m5                     ; 9 qRrSsTtUuVvWwXxY
+    mova     [dst5q+strideq*4], m5                     ; 9  qRrSsTtUuVvWwXxY
     vpalignr                m5, m0, m4, 8
     vpalignr                m6, m2, m0, 8
-    mova     [dstq+stride5q*1], m5                     ; 5 uVvWwXxYyZz#ABCD
-    mova      [dstq+strideq*1], m6                     ; 1 yZz#ABCDEFGHIJKL
+    mova     [dstq+stride5q*1], m5                     ; 5  uVvWwXxYyZz#ABCD
+    mova      [dstq+strideq*1], m6                     ; 1  yZz#ABCDEFGHIJKL
     vpalignr                m5, m1, m3, 12
     vpalignr                m6, m4, m1, 12
     mova     [dstq+stride3q*4], m5                     ; 12 nOoPpQqRrSsTtUuV
-    mova      [dst5q+stride3q], m6                     ; 8 rSsTtUuVvWwXxYyZ
+    mova      [dst5q+stride3q], m6                     ; 8  rSsTtUuVvWwXxYyZ
     vpalignr                m5, m0, m4, 12
     vpalignr                m6, m2, m0, 12
-    mova      [dstq+strideq*4], m5                     ; 4 nOoPpQqRrSsTtUuV
-    mova      [dstq+strideq*0], m6                     ; 0 z#ABCDEFGHIJKLMN
-    sub dst5q, strideq
+    mova      [dstq+strideq*4], m5                     ; 4  nOoPpQqRrSsTtUuV
+    mova      [dstq+strideq*0], m6                     ; 0  z#ABCDEFGHIJKLMN
+    sub                  dst5q, strideq
     vpalignr                m5, m1, m3, 4
     mova    [dst5q+stride5q*2], m5                     ; 14 lMmNnOoPpQqRrSsT
-    sub dst5q, strideq
+    sub                  dst5q, strideq
     vpalignr                m5, m1, m3, 8
-    mova    [dst5q+stride5q*2], m5                     ; 13 mNnOoPpQqRrSsTtU
+    mova     [dst5q+stride5q*2], m5                    ; 13 mNnOoPpQqRrSsTtU
     RET
 
-; our code 2
-cglobal vp9_ipred_vr_16x16_16, 4, 4, 6, dst, stride, l, a
-    movu                    m0, [aq-2]                 ; *abcdefghijklmno
-    mova                    m1, [lq]                   ; klmnopqrstuvwxyz
-    vperm2i128              m2, m0, m1, q0003          ; stuvwxyz*abcdefg
-    vpalignr                m3, m0, m2, 2              ; lmnopqrstuvwxyz*
-    vpalignr                m4, m0, m2, 4              ; mnopqrstuvwxyz*a
-    vpalignr                m1, m0, m2, 6              ; nopqrstuvwxyz*ab
-    LOWPASS                 1, 4, 3                    ; MNOPQRSTUVWXYZ#A
-
-    mova                    m3, [aq]                   ; abcdefghijklmnop
-    vpalignr                m5, m0, m2, 14             ; z*abcdefghijklmn
-    LOWPASS                 3, 0, 5                    ; #ABCDEFGHIJKLMNO
-    pavgw                   m2, m4                     ; stuvwxyz*abcdefg
-    mova                    m4, [aq]                   ; abcdefghijklmnop
-    pavgw                   m4, m0                     ; *abcdefghijklmno
-
-    pslldq                  m0, m1, 8                  ; ....MNORSTUVWXYZ
-    vperm2i128              m5, m3, m0, q0003          ; STUVWXYZ#ABCDEFG
-
-    ;vpshuflw                m0, m1, q3120
-    ;vpshufhw                m0, m1, q3120
-
-
-    DEFINE_ARGS dst, stride, stride3, stride5, dst4
-    lea                  dst4q, [dstq+strideq*4]
-    lea               stride3q, [strideq*3]
-    lea               stride5q, [stride3q+strideq*2]
-
-    vpalignr                m0, m4, m2, 2
-    mova    [dst4q+stride5q*2], m0                     ;14 tuvwxyz*abcdefgh
-    vpalignr                m0, m4, m2, 4
-    mova     [dstq+stride3q*4], m0                     ;12 uvwxyz*abcdefghi
-    vpalignr                m0, m4, m2, 6
-    mova     [dstq+stride5q*2], m0                     ;10 vwxyz*abcdefghij
-    vpalignr                m5, m3, m1, 8
-    vpalignr                m0, m4, m2, 8
-    mova    [dst4q+stride5q*1], m5                     ;9  WXYZ*ABCDEFGHIJK
-    mova      [dstq+strideq*8], m0                     ;8  wxyz*abcdefghijk
-    vpalignr                m5, m3, m1, 10
-    vpalignr                m0, m4, m2, 10
-    mova    [dst4q+stride3q*1], m5                     ;7  XYZ*ABCDEFGHIJKL
-    mova     [dstq+stride3q*2], m0                     ;6  xyz*abcdefghijkl
-    vpalignr                m5, m3, m1, 12
-    vpalignr                m0, m4, m2, 12
-    mova     [dstq+stride5q*1], m5                     ;5  YZ*ABCDEFGHIJKLM
-    mova     [dst4q+strideq*0], m0                     ;4  yz*abcdefghijklm
-    vpalignr                m5, m3, m1, 14
-    vpalignr                m0, m4, m2, 14
-    mova     [dstq+stride3q*1], m5                     ;3  Z*ABCDEFGHIJKLMN
-    mova      [dstq+strideq*2], m0                     ;2  z*abcdefghijklmn
-
-    mova      [dstq+strideq*1], m3                     ;1  *ABCDEFGHIJKLMNO
-    mova      [dstq+strideq*0], m4                     ;0  *abcdefghijklmno
-
-    sub dst4q, strideq
-
-    vpalignr                m5, m3, m1, 2
-    mova    [dst4q+stride3q*4], m5                     ;15 TUVWXYZ*ABCDEFGH
-    vpalignr                m5, m3, m1, 4
-    mova    [dst4q+stride5q*2], m5                     ;13 UVWXYZ*ABCDEFGHI
-    vpalignr                m5, m3, m1, 6
-    mova     [dst4q+strideq*8], m5                     ;11 VWXYZ*ABCDEFGHIJ
+cglobal vp9_ipred_hd_32x32_16, 4, 7, 10, dst, stride, l, a
+    movu                    m0, [aq+mmsize*0-2]        ; a[-1-14]
+    mova                    m1, [lq+mmsize*1+0]        ; l[16-31]
+    vperm2i128              m2, m1, m0, q0201          ; stuvwxyz*abcdefg
+    vpalignr                m3, m2, m1, 2              ; lmnopqrstuvwxyz*
+    vpalignr                m4, m2, m1, 4              ; mnopqrstuvwxyz*a
+    LOWPASS                  4,  3,  1                 ; LMNOPQRSTUVWXYZ#
+    pavgw                   m3, m1                     ; klmnopqrstuvwxyz
+    mova                    m1, [aq+mmsize*0+0]        ; abcdefghijklmnop
+    movu                    m2, [aq+mmsize*0+2]        ; bcdefghijklmnop.
+    LOWPASS                  2,  1,  0                 ; ABCDEFGHIJKLMNOP
+    vpunpcklwd              m0, m3, m4                 ; kLlMmNnOsTtUuVvW
+    vpunpckhwd              m1, m3, m4                 ; oPpQqRrSwXxYyZz#
+    vperm2i128              m3, m1, m0, q0002          ; kLlMmNnOoPpQqRrS
+    vperm2i128              m4, m0, m1, q0301          ; sTtUuVvWwXxYyZz#
+    vperm2i128              m0, m4, m2, q0201          ; wXxYyZz#ABCDEFGH
+    vperm2i128              m1, m3, m4, q0201          ; oPpQqRrSsTtUuVvW
+    movu                    m7, [aq+mmsize*1-2]        ; a[15-30]
+    mova                    m6, [aq+mmsize*1+0]        ; a[16-31]
+    movu                    m5, [aq+mmsize*1+2]        ; a[17-31].
+    LOWPASS                  5,  6,  7                 ; A[16-30].
+    mova                    m8, [lq+mmsize*0+0]        ; l[0-15]
+    mova                    m7, [lq+mmsize*0+2]        ; l[1-16]
+    mova                    m6, [lq+mmsize*0+4]        ; l[2-17]
+    LOWPASS                  6,  7,  8                 ; L[1-16].
+    pavgw                   m7, m8                     ; l[0-15]
+    vpunpcklwd              m8, m7, m6                 ;
+    vpunpckhwd              m9, m7, m6                 ;
+    vperm2i128              m6, m9, m8, q0002          ; l[0]Ll[1-7]L[8]
+    vperm2i128              m7, m8, m9, q0301          ; l[8]Ll[9-15]L[16]
     RET
 
 %if ARCH_X86_64
@@ -1563,12 +1584,12 @@ cglobal vp9_ipred_vl_4x4_16, 2, 4, 3, dst, stride, l, a
     DEFINE_ARGS dst, stride, stride3
     lea               stride3q, [strideq*3]
 
-    movh      [dstq+strideq*0], m1
-    movh      [dstq+strideq*1], m2
+    movh      [dstq+strideq*0], m1  ; ABCD
+    movh      [dstq+strideq*1], m2  ; BCDE
     psrldq                  m1, 2
     psrldq                  m2, 2
-    movh      [dstq+strideq*2], m1
-    movh      [dstq+stride3q ], m2
+    movh      [dstq+strideq*2], m1  ; BCDE
+    movh      [dstq+stride3q ], m2  ; CDEF
     RET
 
 cglobal vp9_ipred_vl_8x8_16, 2, 4, 4, dst, stride, l, a
@@ -1602,8 +1623,8 @@ cglobal vp9_ipred_vl_8x8_16, 2, 4, 4, dst, stride, l, a
 
 cglobal vp9_ipred_vl_16x16_16, 2, 4, 6, dst, stride, l, a
     movifnidn               aq, amp
-    mova                    m0, [aq]
-    mova                    m1, [aq+mmsize]
+    mova                    m0, [aq]                     ; abcdefghijklmnop
+    mova                    m1, [aq+mmsize]              ; ijklmnop
     PALIGNR                 m2, m1, m0, 2, m3
     PALIGNR                 m3, m1, m0, 4, m4
     LOWPASS                  3,  2,  0
@@ -1840,13 +1861,13 @@ cglobal vp9_ipred_vr_16x16_16, 4, 4, 8, dst, stride, l, a
     pavgw                   m3, m1
     PALIGNR                 m1, m5,  2, m7          ; tuvwxyz*
     movu                    m7, [lq+mmsize-2]       ; rstuvwxy
-    LOWPASS                  1,  5,  7              ; STUVWXYZ
+    LOWPASS                  1,  5,  7
     movu                    m5, [lq+2]              ; lmnopqrs
     pslldq                  m4, m5,  2              ; .lmnopqr
     pslldq                  m7, m5,  4              ; ..lmnopq
-    LOWPASS                  5,  4,  7              ; .LMNOPQR
-    psrld                   m4, m1, 16              ;
-    psrld                   m7, m5, 16              ;
+    LOWPASS                  5,  4,  7
+    psrld                   m4, m1, 16
+    psrld                   m7, m5, 16
     pand                    m1, [pd_65535]
     pand                    m5, [pd_65535]
     packssdw                m7, m4
