@@ -2,4 +2,7 @@
 Писали SRS
 20.04
 После двух недель поиска решения оптимизация vr 16x16 завершена
-Найдена статья https://www.agner.org/optimize/instruction_tables.pdf
+Найдены статьи: 
+	https://www.agner.org/optimize/instruction_tables.pdf
+	https://annals-csis.org/Volume_15/drp/pdf/28.pdf
+	https://www.phoronix.com/scan.php?page=article&item=rocket-lake-avx512&num=6
