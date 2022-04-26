@@ -6,3 +6,5 @@
 	https://www.agner.org/optimize/instruction_tables.pdf
 	https://annals-csis.org/Volume_15/drp/pdf/28.pdf
 	https://www.phoronix.com/scan.php?page=article&item=rocket-lake-avx512&num=6
+27.04
+Частично сделана функция vl 32x32

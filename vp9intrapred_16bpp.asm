@@ -1274,6 +1274,30 @@ cglobal vp9_ipred_vl_16x16_16, 4, 5, 7, dst, stride, l, a
     mova    [dst4q+stride3q*4], m1                     ; 15 IJKLMNOPPPPPPPPP
     RET
 
+cglobal vp9_ipred_vl_32x32_16, 4, 5, 7, dst, stride, l, a
+    movifnidn               aq, amp
+    mova                    m0, [aq+mmsize*0]          ; [0-15]
+    mova                    m1, [aq+mmsize*1]          ; [16-31]
+    vperm2i128              m2, m0, m1, q0201          ; [8-24]
+    vpalignr                m3, m2, m0, 2              ; [1-16]
+    vpalignr                m4, m2, m0, 4              ; [2-17]
+    LOWPASS                 4, 3, 0
+    pavgw                   m3, m0
+
+    vpbroadcastw            ym0, [aq+mmsize*1+30]      ; l[31]
+    vperm2i128              m2, m1, m0, q0201          ;
+    vpalignr                m5, m2, m1, 2              ; l[17-31,31]
+    vperm2i128              m6, m5, m0, q0201          ;
+    vpalignr                m7, m2, m1, 4              ; l[18-31,31,31]
+    vperm2i128              m8, m7, m0, q0201          ;
+
+    LOWPASS                 7, 5, 1
+    LOWPASS                 8, 6, 2
+    pavgw                   m5, m1
+    pavgw                   m6, m2
+
+    RET
+
 cglobal vp9_ipred_vr_16x16_16, 4, 4, 6, dst, stride, l, a
     movu                    m0, [aq-2]                 ; *abcdefghijklmno
     movu                    m1, [lq-2]                 ; *klmnopqrstuvwxy
