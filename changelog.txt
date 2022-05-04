@@ -8,3 +8,5 @@
 	https://www.phoronix.com/scan.php?page=article&item=rocket-lake-avx512&num=6
 27.04
 Частично сделана функция vl 32x32
+04.05
+Отправили vl_16x16 на проверку FFmpeg, ждём ответа
