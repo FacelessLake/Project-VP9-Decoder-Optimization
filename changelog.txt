@@ -1,8 +1,16 @@
 6.04-13.04
 Писали SRS
+
 20.04
 После двух недель поиска решения оптимизация vr 16x16 завершена
 Найдены статьи: 
 	https://www.agner.org/optimize/instruction_tables.pdf
 	https://annals-csis.org/Volume_15/drp/pdf/28.pdf
 	https://www.phoronix.com/scan.php?page=article&item=rocket-lake-avx512&num=6
+
+27.04
+Начали оптимизировать vl_32x32, сделали всю часть до загрузки.
+
+4.05
+Написали и сдали SAD.
+Закончили оптимизацию vl_32x32.
