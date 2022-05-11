@@ -59,6 +59,7 @@ decl_ipred_fn(vl,       32,     16, avx2);
 decl_ipred_fn(vr,       16,     16, avx2);
 decl_ipred_fn(hu,       16,     16, avx2);
 decl_ipred_fn(hd,       16,     16, avx2);
+decl_ipred_fn(vl,       32,     16, avx2);
 //decl_ipred_fn(hd,       32,     16, avx2);
 
 #define decl_ipred_dir_funcs(type) \
@@ -150,6 +151,7 @@ av_cold void ff_vp9dsp_init_16bpp_x86(VP9DSPContext *dsp)
         init_ipred_func(vr, VERT_RIGHT, 16, 16, avx2);
         init_ipred_func(hu, HOR_UP, 16, 16, avx2);
         init_ipred_func(hd, HOR_DOWN, 16, 16, avx2);
+        init_ipred_func(vl, VERT_LEFT, 32, 16, avx2);
         //init_ipred_func(hd, HOR_DOWN, 32, 16, avx2);
 #if ARCH_X86_64
         init_ipred_func(dr, DIAG_DOWN_RIGHT, 32, 16, avx2);
